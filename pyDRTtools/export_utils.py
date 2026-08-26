@@ -5,6 +5,7 @@ from pathlib import Path
 import csv
 import numpy as np
 import pandas as pd
+from scipy.integrate import trapezoid
 
 
 def _series_from_entry(entry):
@@ -31,7 +32,7 @@ def _integrated_area(x, y):
         return np.nan
     idx = np.argsort(x)
     xs, ys = x[idx], y[idx]
-    return float(np.trapz(ys, np.log(xs)))
+    return float(trapezoid(ys, np.log(xs)))
 
 
 def compute_peak_summary(entry):
@@ -122,7 +123,8 @@ def export_peak_parameters(entry, output_folder, original_name):
     if df.empty:
         return None
     path = Path(output_folder)/f"{original_name} parameters.csv"
-    df.to_csv(path, index=False)
+    export_df = df.rename(columns={'ID': 'Peak_ID'})
+    export_df.to_csv(path, index=False)
     return path
 
 
