@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite this repository and the relevant original pyDRTtools publications."
+title: "pyDRT-Peak-Analysis"
+type: software
+
+authors:
+  - family-names: "Fakouri Hasanabadi"
+    given-names: "Masood"
+
+version: 0.1.0
+date-released: 2026-08-25
+
+repository-code: "https://github.com/MFakouri/pyDRT-Peak-Analysis-"
+
+license: MIT
