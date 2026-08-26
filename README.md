@@ -20,6 +20,7 @@ This repository provides an extended and modified version of pyDRTtools in which
 - Automatic export of the peak parameters to a CSV file.
 - Automatic saving of the resulting figure.
 
+![Nyquist Plot](tutorial/Nyquist.png)
 ![DRT Peaks](tutorial/DRT-Peaks.png)
 
 ## Original pyDRTtools
