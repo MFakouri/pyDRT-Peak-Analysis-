@@ -21,7 +21,7 @@ This repository provides an extended and modified version of pyDRTtools in which
 - Automatic saving of the resulting figure.
 
 <p align="center">
-  <img src="tutorial/Nyquist.png" width="400">
+  <img src="tutorial/Nyquist.png" width="430">
 </p>
 
 <p align="center">
