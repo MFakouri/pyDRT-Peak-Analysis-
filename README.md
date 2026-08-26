@@ -5,9 +5,15 @@ This repository provides an extended and modified version of pyDRTtools in which
 <p align="center">
   <img src="tutorial/Nyquist.png" width="430">
 </p>
+<p align="center">
+  Nyquist plot.
+</p>
 
 <p align="center">
   <img src="tutorial/DRT-Peaks.png" width="600">
+</p>
+<p align="center">
+  DRT peaks.
 </p>
 
 ## Main Features
