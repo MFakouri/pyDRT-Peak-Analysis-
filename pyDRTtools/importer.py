@@ -23,6 +23,29 @@ _IMAG_ALIASES = {
     "zimag", "zimaginary", "zim", "zprimeprime", "impedanceprimeprime",
     "imagz", "imz", "zprimeprimetotal", "im/ohm", "impedancei/ohm",
 }
+_MAG_ALIASES = {
+    "z", "|z|", "abs", "mod", "mag", "magnitude", "modulus",
+    "ztotal", "zmod", "zmag", "zabs", "absz", "modz",
+    "zmagnitude", "zmodulus", "absolutez",
+    "impedance", "totalimpedance", "impedancetotal",
+    "impedancemagnitude", "impedancemodulus", "impedanceabs",
+    "absoluteimpedance",
+    "z/ohm", "|z|/ohm", "ztotal/ohm", "zmod/ohm", "zmag/ohm",
+    "zabs/ohm", "absz/ohm", "zmagnitude/ohm", "zmodulus/ohm",
+    "impedance/ohm", "totalimpedance/ohm", "impedancetotal/ohm",
+    "impedancemagnitude/ohm", "impedancemodulus/ohm",
+    "absoluteimpedance/ohm",
+}
+_PHASE_ALIASES = {
+    "phase", "phaseangle", "phaseofz", "zphase", "zangle", "angle",
+    "phi", "phiz", "theta",
+    "phase/deg", "phase/degree", "phase/degrees",
+    "phaseangle/deg", "zphase/deg", "zangle/deg", "angle/deg",
+    "phi/deg", "phiz/deg", "theta/deg",
+    "phase/rad", "phase/radian", "phase/radians",
+    "phaseangle/rad", "zphase/rad", "zangle/rad", "angle/rad",
+    "phi/rad", "phiz/rad", "theta/rad",
+}
 
 
 def _normalize_header(token: str) -> tuple[str, bool]:
@@ -57,7 +80,15 @@ def _classify_header(token: str) -> tuple[str | None, bool]:
         return "real", False
     if norm in _IMAG_ALIASES:
         return "imag", negative
+    if norm in _MAG_ALIASES:
+        return "mag", False
+    if norm in _PHASE_ALIASES or norm.startswith("phase") or norm.startswith("zphase"):
+        return "phase", False
     return None, False
+
+
+def _phase_is_radians(token: str) -> bool:
+    return "rad" in token.lower()
 
 
 def _split_header(line: str) -> tuple[list[str], str]:
@@ -94,8 +125,9 @@ def _read_intelligent_text(path: Path) -> np.ndarray:
     lines = re.split(r"\r\n|\n|\r", text)
 
     header_line = None
-    freq_idx = real_idx = imag_idx = None
+    freq_idx = real_idx = imag_idx = mag_idx = phase_idx = None
     negative_imag = False
+    phase_radians = False
     delimiter = None
 
     for i, line in enumerate(lines):
@@ -103,8 +135,10 @@ def _read_intelligent_text(path: Path) -> np.ndarray:
         if len(tokens) < 3:
             continue
 
-        tf = tr = ti = None
+        tf = tr = ti = tm = tp = None
         tneg = False
+        trad = False
+
         for j, token in enumerate(tokens):
             kind, neg = _classify_header(token)
             if kind == "freq" and tf is None:
@@ -114,35 +148,74 @@ def _read_intelligent_text(path: Path) -> np.ndarray:
             elif kind == "imag" and ti is None:
                 ti = j
                 tneg = neg
+            elif kind == "mag" and tm is None:
+                tm = j
+            elif kind == "phase" and tp is None:
+                tp = j
+                trad = _phase_is_radians(token)
 
-        if tf is not None and tr is not None and ti is not None:
+        has_cartesian = tf is not None and tr is not None and ti is not None
+        has_polar = tf is not None and tm is not None and tp is not None
+
+        if has_cartesian or has_polar:
             header_line = i
-            freq_idx, real_idx, imag_idx = tf, tr, ti
-            negative_imag = tneg
+            freq_idx = tf
             delimiter = this_delimiter
+
+            if has_cartesian:
+                real_idx = tr
+                imag_idx = ti
+                negative_imag = tneg
+            else:
+                mag_idx = tm
+                phase_idx = tp
+                phase_radians = trad
             break
 
     if header_line is None:
         raise ValueError(
-            "Could not find the required EIS columns. Supported labels include "
-            "Freq/Frequency, Zreal/Z'/impedance', and Zimag/Z''/impedance'' "
-            "(including -Z'', Re(Z)/Ohm and Im(Z)/Ohm)."
+            "Could not identify valid EIS data.\n\n"
+            "Supported file formats: .mat, .txt, .csv, .z, .dat, .dta, .mpr, .ism\n\n"
+            "Text-based files must contain either Frequency + Zreal + Zimag "
+            "or Frequency + |Z|/Magnitude + Phase columns."
         )
 
-    max_idx = max(freq_idx, real_idx, imag_idx)
+    used_indices = [freq_idx]
+    if real_idx is not None:
+        used_indices.extend([real_idx, imag_idx])
+    else:
+        used_indices.extend([mag_idx, phase_idx])
+    max_idx = max(used_indices)
+
     rows: list[list[float]] = []
     for line in lines[header_line + 1:]:
         if not line.strip():
             continue
+
         tokens = _split_data(line, delimiter)
         if len(tokens) <= max_idx:
             continue
+
         f = _parse_number(tokens[freq_idx])
-        zr = _parse_number(tokens[real_idx])
-        zi = _parse_number(tokens[imag_idx])
-        if np.isfinite(f) and np.isfinite(zr) and np.isfinite(zi):
+
+        if real_idx is not None:
+            zr = _parse_number(tokens[real_idx])
+            zi = _parse_number(tokens[imag_idx])
             if negative_imag:
                 zi = -zi
+        else:
+            magnitude = _parse_number(tokens[mag_idx])
+            phase = _parse_number(tokens[phase_idx])
+
+            if phase_radians:
+                phase_rad = phase
+            else:
+                phase_rad = np.deg2rad(phase)
+
+            zr = magnitude * np.cos(phase_rad)
+            zi = magnitude * np.sin(phase_rad)
+
+        if np.isfinite(f) and np.isfinite(zr) and np.isfinite(zi):
             rows.append([f, zr, zi])
 
     if not rows:
@@ -250,7 +323,10 @@ def read_eis_file(filename: str | Path) -> np.ndarray:
             except Exception:
                 raise intelligent_error
     else:
-        raise ValueError(f"Unsupported file type: {ext}")
+        raise ValueError(
+            f"Unsupported file type: {ext}\n\n"
+            "Supported file formats: .mat, .txt, .csv, .z, .dat, .dta, .mpr, .ism"
+        )
 
     data = np.asarray(data, dtype=float)
     data = data[np.isfinite(data[:, :3]).all(axis=1)]
