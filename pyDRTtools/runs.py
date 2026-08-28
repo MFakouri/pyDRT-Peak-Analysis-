@@ -715,8 +715,8 @@ def peak_analysis(entry, rbf_type='Gaussian', data_used='Combined Re-Im Data', i
         # termination is imperfect; preserve that behavior.
         p_fit = np.asarray(result.x, dtype=float)
 
-        abs_residual = np.abs(_matlab_gauss_fct(tau_fine, p_ref, p_fit) - gamma)
-        idx_temp = int(np.argmax(abs_residual))
+        residual = gamma - _matlab_gauss_fct(tau_fine, p_ref, p_fit)
+        idx_temp = int(np.argmax(residual))
         peak_value_temp = float(gamma[idx_temp])
         log_tau_mu_temp = float(np.log(tau_fine[idx_temp]))
         if abs(np.exp(log_tau_mu_temp)-1) < np.finfo(float).eps:
