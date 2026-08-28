@@ -17,11 +17,11 @@ from scipy.io import loadmat
 _FREQ_ALIASES = {"freq", "frequency"}
 _REAL_ALIASES = {
     "zreal", "zre", "zprime", "impedanceprime", "realz", "rez",
-    "zprimetotal", "re/ohm",
+    "zprimetotal", "re/ohm", "impedancer/ohm",
 }
 _IMAG_ALIASES = {
     "zimag", "zimaginary", "zim", "zprimeprime", "impedanceprimeprime",
-    "imagz", "imz", "zprimeprimetotal", "im/ohm",
+    "imagz", "imz", "zprimeprimetotal", "im/ohm", "impedancei/ohm",
 }
 
 
