@@ -239,7 +239,7 @@ class GUI(QtWidgets.QMainWindow):
     def import_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select an EIS file", "",
-            "EIS data (*.mat *.txt *.csv *.z *.dat);;All Files (*)"
+            "EIS data (*.mat *.txt *.csv *.z *.dat *.mpr *.dta *.ism);;All Files (*)"
         )
         if not path:
             return

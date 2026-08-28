@@ -168,12 +168,66 @@ def _read_plain_numeric(path: Path) -> np.ndarray:
     return arr[:, :3]
 
 
+
+def _read_biologic_mpr(path: Path) -> np.ndarray:
+    """Read BioLogic EC-Lab .mpr EIS data as [frequency, Zreal, Zimag]."""
+    try:
+        from galvani import BioLogic
+    except ImportError as exc:
+        raise ImportError(
+            "BioLogic .mpr support requires the 'galvani' package. "
+            "Install it with: pip install galvani"
+        ) from exc
+
+    mpr = BioLogic.MPRfile(str(path))
+    names = set(mpr.data.dtype.names or ())
+    required = {"freq/Hz", "Re(Z)/Ohm", "-Im(Z)/Ohm"}
+    missing = required - names
+    if missing:
+        raise ValueError(
+            "BioLogic .mpr file does not contain the required EIS columns: "
+            + ", ".join(sorted(missing))
+        )
+
+    freq = np.asarray(mpr.data["freq/Hz"], dtype=float).reshape(-1)
+    zr = np.asarray(mpr.data["Re(Z)/Ohm"], dtype=float).reshape(-1)
+    # BioLogic stores -Im(Z); the importer standard is Zimag.
+    zi = -np.asarray(mpr.data["-Im(Z)/Ohm"], dtype=float).reshape(-1)
+    return np.column_stack([freq, zr, zi])
+
+
+def _read_zahner_ism(path: Path) -> np.ndarray:
+    """Read Zahner .ism EIS data as [frequency, Zreal, Zimag]."""
+    try:
+        from zahner_analysis.file_import.ism_import import IsmImport
+    except ImportError as exc:
+        raise ImportError(
+            "Zahner .ism support requires the 'zahner_analysis' package. "
+            "Install it with: pip install zahner_analysis"
+        ) from exc
+
+    ism = IsmImport(str(path))
+    freq = np.asarray(ism.getFrequencyArray(), dtype=float).reshape(-1)
+    impedance = np.asarray(ism.getComplexImpedanceArray(), dtype=complex).reshape(-1)
+
+    if freq.size != impedance.size:
+        raise ValueError("Zahner .ism frequency and impedance arrays do not have equal lengths.")
+
+    return np.column_stack([freq, impedance.real, impedance.imag])
+
+
 def read_eis_file(filename: str | Path) -> np.ndarray:
     """Read and standardize an EIS file to [frequency, Zreal, Zimag]."""
     path = Path(filename)
     ext = path.suffix.lower()
 
-    if ext == ".mat":
+    if ext == ".mpr":
+        data = _read_biologic_mpr(path)
+
+    elif ext == ".ism":
+        data = _read_zahner_ism(path)
+
+    elif ext == ".mat":
         mat = loadmat(path, squeeze_me=True)
         try:
             freq = np.asarray(mat["freq"], dtype=float).reshape(-1)
@@ -185,7 +239,7 @@ def read_eis_file(filename: str | Path) -> np.ndarray:
             raise ValueError("MAT file EIS vectors do not have equal lengths.")
         data = np.column_stack([freq, zr, zi])
 
-    elif ext in {".txt", ".csv", ".z", ".dat"}:
+    elif ext in {".txt", ".csv", ".z", ".dat", ".dta"}:
         try:
             data = _read_intelligent_text(path)
         except Exception as intelligent_error:
