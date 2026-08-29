@@ -538,7 +538,7 @@ class Ui_MainWindow(object):
         self.show_re_res.setText(_translate("MainWindow", "Re Residual"))
         self.show_im_res.setText(_translate("MainWindow", "Im Residual"))
         self.show_DRT.setText(_translate("MainWindow", "DRT"))
-        self.show_score.setText(_translate("MainWindow", "EIS Score"))
+        self.show_score.setText(_translate("MainWindow", "RCs fitting"))
         self.settings_layout.setTitle(_translate("MainWindow", "Settings"))
         self.import_button.setText(_translate("MainWindow", "Import "))
         self.discre_label.setText(_translate("MainWindow", "Method of Discretization"))

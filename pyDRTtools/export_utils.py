@@ -122,9 +122,47 @@ def export_peak_parameters(entry, output_folder, original_name):
     df = compute_peak_summary(entry)
     if df.empty:
         return None
-    path = Path(output_folder)/f"{original_name} parameters.csv"
+    path = Path(output_folder)/f"{original_name} DRT parameters.csv"
     export_df = df.rename(columns={'ID': 'Peak_ID'})
     export_df.to_csv(path, index=False)
+    return path
+
+
+def export_fitting_parameters(entry, output_folder, original_name):
+    fit = getattr(entry, 'cnls_fit', None)
+    if not fit:
+        return None
+
+    rows = [
+        {
+            'Component': 'L',
+            'Value': fit['L'],
+            'R': np.nan,
+            'C': np.nan,
+            'Frequency (Hz)': np.nan,
+            'Tau (s)': np.nan,
+        },
+        {
+            'Component': 'R',
+            'Value': fit['R'],
+            'R': np.nan,
+            'C': np.nan,
+            'Frequency (Hz)': np.nan,
+            'Tau (s)': np.nan,
+        },
+    ]
+    for rc in fit['rc']:
+        rows.append({
+            'Component': rc['component'],
+            'Value': np.nan,
+            'R': rc['R'],
+            'C': rc['C'],
+            'Frequency (Hz)': rc['frequency'],
+            'Tau (s)': rc['tau'],
+        })
+
+    path = Path(output_folder)/f"{original_name} fitting parameters.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
     return path
 
 

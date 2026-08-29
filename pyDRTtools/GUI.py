@@ -19,7 +19,8 @@ from . import layout
 from . import basics
 from .runs import EIS_object, simple_run, Bayesian_run, BHT_run, peak_analysis
 from .importer import read_eis_file, apply_active_area
-from .export_utils import export_drt_csv, export_eis_csv, export_peak_parameters, compute_peak_summary
+from .export_utils import export_drt_csv, export_eis_csv, export_peak_parameters, export_fitting_parameters, compute_peak_summary
+from .cnls_peak_fit import fit_with_frequency_bounds
 
 
 class ActiveAreaDialog(QtWidgets.QDialog):
@@ -140,6 +141,29 @@ class GUI(QtWidgets.QMainWindow):
         self.peak_table.setStyleSheet("QTableWidget { font-size: 10pt; }")
         self.peak_table.hide()
 
+        # CNLS-fit table used only by the EIS Score view. The Score view has
+        # been repurposed from BHT score bars to input-vs-fitted Nyquist data.
+        self.cnls_table_label = QtWidgets.QLabel("CNLS Fit Parameters", self.ui.frame)
+        self.cnls_table_label.setGeometry(QtCore.QRect(5, 641, 220, 18))
+        cnls_label_font = self.cnls_table_label.font()
+        cnls_label_font.setBold(True)
+        self.cnls_table_label.setFont(cnls_label_font)
+        self.cnls_table_label.hide()
+
+        self.cnls_table = QtWidgets.QTableWidget(self.ui.frame)
+        self.cnls_table.setGeometry(QtCore.QRect(0, 660, 901, 281))
+        self.cnls_table.setColumnCount(6)
+        self.cnls_table.setHorizontalHeaderLabels([
+            "Component", "Value", "R", "C", "Frequency (Hz)", "Tau (s)"
+        ])
+        self.cnls_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.cnls_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.cnls_table.setAlternatingRowColors(True)
+        self.cnls_table.verticalHeader().setVisible(False)
+        self.cnls_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.cnls_table.setStyleSheet("QTableWidget { font-size: 10pt; }")
+        self.cnls_table.hide()
+
         # Configure DRT plot and export modes.
         self.ui.peak_method_label.setText("DRT plot")
         self.ui.peak_method_choice.clear()
@@ -189,9 +213,52 @@ class GUI(QtWidgets.QMainWindow):
         self.peak_table.setRowCount(0)
         self.peak_table.hide()
         self.peak_table_label.hide()
-        self.ui.plot_panel.setGeometry(QtCore.QRect(0, 40, 901, 901))
+        if not self.cnls_table.isVisible():
+            self.ui.plot_panel.setGeometry(QtCore.QRect(0, 40, 901, 901))
+
+    def _hide_cnls_table(self):
+        self.cnls_table.clearContents()
+        self.cnls_table.setRowCount(0)
+        self.cnls_table.hide()
+        self.cnls_table_label.hide()
+        if not self.peak_table.isVisible():
+            self.ui.plot_panel.setGeometry(QtCore.QRect(0, 40, 901, 901))
+
+    def _show_cnls_table(self):
+        fit = getattr(self.data, 'cnls_fit', None) if self.data is not None else None
+        if not fit:
+            self._hide_cnls_table()
+            return
+
+        rows = [
+            ("L", fit['L'], None, None, None, None),
+            ("R", fit['R'], None, None, None, None),
+        ]
+        for rc in fit['rc']:
+            rows.append((
+                rc['component'], None, rc['R'], rc['C'], rc['frequency'], rc['tau']
+            ))
+
+        self.cnls_table.setRowCount(len(rows))
+        for row_idx, values in enumerate(rows):
+            for col_idx, value in enumerate(values):
+                if value is None:
+                    text = ""
+                elif col_idx == 0:
+                    text = str(value)
+                else:
+                    text = f"{float(value):.6g}"
+                item = QtWidgets.QTableWidgetItem(text)
+                item.setTextAlignment(QtCore.Qt.AlignCenter)
+                self.cnls_table.setItem(row_idx, col_idx, item)
+
+        self._hide_peak_table()
+        self.ui.plot_panel.setGeometry(QtCore.QRect(0, 40, 901, 601))
+        self.cnls_table_label.show()
+        self.cnls_table.show()
 
     def _show_peak_table(self):
+        self._hide_cnls_table()
         df = compute_peak_summary(self.data)
         if df.empty:
             self._hide_peak_table()
@@ -256,6 +323,7 @@ class GUI(QtWidgets.QMainWindow):
             self.data.source_path = path
             self.data.active_area_applied_here = dlg.apply_area
             self.data.active_area_cm2 = dlg.area
+            self.data.cnls_fit = None
             self.inductance_callback()
             self.statusBar().showMessage(f"Imported file: {path}", 3000)
         except Exception as exc:
@@ -280,7 +348,9 @@ class GUI(QtWidgets.QMainWindow):
             self.data.tau = 1.0/self.data.freq
             self.data._reset_tau_fine()
             self.data.method = 'none'
+            self.data.cnls_fit = None
             self._hide_peak_table()
+            self._hide_cnls_table()
             self.plotting_callback('EIS_data')
         except Exception as exc:
             self._error("Inductance Error", exc)
@@ -329,7 +399,9 @@ class GUI(QtWidgets.QMainWindow):
                     self.ui.reg_param_label_2.setText(
                         f"Optimal Regularization parameter ({settings['cv_type']})"
                     )
+            self.data.cnls_fit = None
             self._hide_peak_table()
+            self._hide_cnls_table()
             self.plotting_callback('DRT_data')
         except Exception as exc:
             self._error("Simple Run Error", exc)
@@ -341,7 +413,9 @@ class GUI(QtWidgets.QMainWindow):
             settings = self._settings()
             settings['NMC_sample'] = int(self.ui.sample_no_entry.text())
             self.data = Bayesian_run(self.data, **settings)
+            self.data.cnls_fit = None
             self._hide_peak_table()
+            self._hide_cnls_table()
             self.plotting_callback('DRT_data')
         except Exception as exc:
             self._error("Bayesian Run Error", exc)
@@ -357,7 +431,9 @@ class GUI(QtWidgets.QMainWindow):
                 str(self.ui.shape_control_choice.currentText()),
                 float(self.ui.FWHM_entry.text()),
             )
+            self.data.cnls_fit = None
             self._hide_peak_table()
+            self._hide_cnls_table()
             self.plotting_callback('DRT_data')
         except Exception as exc:
             self._error("BHT Error", exc)
@@ -366,19 +442,48 @@ class GUI(QtWidgets.QMainWindow):
         if self.data is None:
             return
         try:
+            n_peaks = max(1, int(round(abs(float(self.ui.peak_num_entry.text())))))
             settings = self._settings()
             self.data = peak_analysis(
                 self.data, **settings, peak_method='separate',
-                N_peaks=float(self.ui.peak_num_entry.text())
+                N_peaks=n_peaks
             )
+
+            # The requested number of peaks is also the number of RC branches.
+            # Initial R/C/f come directly from peak deconvolution in
+            # high-frequency -> low-frequency order. Frequency is then allowed
+            # to move only inside the requested log-domain ±5% interval.
+            fit = fit_with_frequency_bounds(self.data, expected_n_peaks=n_peaks)
+
             self.plotting_callback('DRT_data')
             self._show_peak_table()
+            self.statusBar().showMessage(
+                f"Peak deconvolution complete: {n_peaks} RC branches. "
+                f"CNLS fitted L={fit['L']:.4g}, series R={fit['R']:.4g}, and RC values; "
+                "peak frequencies were fitted within their log-domain bounds. "
+                "Open RCs fitting to view the Nyquist fit and parameter table.",
+                8000
+            )
         except Exception as exc:
-            self._error("Peak Analysis Error", exc)
+            self._error("Peak Analysis / CNLS Fit Error", exc)
 
     def plotting_callback(self, plot_to_show):
         if self.data is None:
             return
+
+        # The EIS Score view is reserved exclusively for the bounded-frequency CNLS
+        # Nyquist fit and its parameter table. Other views restore their own
+        # normal table/plot layout.
+        if plot_to_show == 'Score':
+            self._hide_peak_table()
+            self._show_cnls_table()
+        elif plot_to_show == 'DRT_data' and getattr(self.data, 'method', '') == 'peak':
+            self._hide_cnls_table()
+            self._show_peak_table()
+        else:
+            self._hide_peak_table()
+            self._hide_cnls_table()
+
         fig = Figure_Canvas()
         func = getattr(fig, plot_to_show)
         if plot_to_show == 'DRT_data':
@@ -438,9 +543,12 @@ class GUI(QtWidgets.QMainWindow):
             fig.DRT_data(self.data, 'Gamma vs Tau')
             fig.figure.savefig(path, dpi=300, bbox_inches='tight')
             params = export_peak_parameters(self.data, folder, name)
+            fitting_params = export_fitting_parameters(self.data, folder, name)
             msg = f"Saved: {path}"
             if params is not None:
                 msg += f" and {params.name}"
+            if fitting_params is not None:
+                msg += f" and {fitting_params.name}"
             self.statusBar().showMessage(msg, 5000)
         except Exception as exc:
             self._error("Figure Export Error", exc)
@@ -636,19 +744,57 @@ class Figure_Canvas(FigureCanvas):
             self.axes.set_ylim(y_min, 1.1*y_max)
 
     def Score(self, entry):
-        if entry.method != 'BHT':
-            return
-        re = np.array([*entry.out_scores['s_res_re'], entry.out_scores['s_mu_re'], entry.out_scores['s_HD_re'], entry.out_scores['s_JSD_re']])
-        im = np.array([*entry.out_scores['s_res_im'], entry.out_scores['s_mu_im'], entry.out_scores['s_HD_im'], entry.out_scores['s_JSD_im']])
-        x = np.arange(6); width = 0.35
-        self.axes.bar(x-width/2, re*100, width, label='Real')
-        self.axes.bar(x+width/2, im*100, width, label='Imaginary')
-        self.axes.plot([-0.5,5.5], [100,100], '--k')
-        self.axes.legend(frameon=False, fontsize=15)
-        self.axes.set_ylim([0,125]); self.axes.set_xlim([-0.5,5.5])
-        self.axes.set_xticks(x)
-        self.axes.set_xticklabels((r'$s_{1\sigma}$', r'$s_{2\sigma}$', r'$s_{3\sigma}$', r'$s_{\mu}$', r'$s_{\rm HD}$', r'$s_{\rm JSD}$'))
-        self.axes.set_yticks([0,50,100]); self.axes.set_ylabel('Scores (%)')
+        """RCs fitting view: input EIS, CNLS fit, and sequential RC contributions."""
+        fit = getattr(entry, 'cnls_fit', None)
+        self.axes.axhline(0.0, color='lightgray', linewidth=1.0, zorder=0)
+        self.axes.plot(
+            np.real(entry.Z_exp), -np.imag(entry.Z_exp),
+            'or', markersize=5, label='Input EIS'
+        )
+        if fit:
+            Z_fit = np.asarray(fit['Z_fit'], dtype=complex)
+            self.axes.plot(
+                np.real(Z_fit), -np.imag(Z_fit),
+                'k-', linewidth=2.5, label='Bounded-frequency CNLS fit'
+            )
+
+            # Plot each fitted parallel-RC contribution sequentially, using the
+            # same fitted R/C values shown in the CNLS table. This follows the
+            # MATLAB discrete-RC Nyquist display: start at fitted series R,
+            # shift only the real part, then use the end of one RC as the
+            # horizontal offset for the next RC.
+            fit_freq = np.asarray(fit.get('freq', entry.freq), dtype=float).reshape(-1)
+            omega = 2.0 * np.pi * fit_freq
+            offset = float(fit['R'])
+            rc_colors = (
+                'tab:blue', 'tab:orange', 'tab:green', 'tab:purple',
+                'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive',
+                'tab:cyan', 'navy', 'teal', 'goldenrod'
+            )
+            for rc_index, rc in enumerate(fit.get('rc', [])):
+                R_i = float(rc['R'])
+                C_i = float(rc['C'])
+                Z_rc = R_i / (1.0 + 1j * omega * R_i * C_i)
+                z_real_adj = np.real(Z_rc) + offset
+                z_imag = -np.imag(Z_rc)
+                self.axes.plot(
+                    z_real_adj, z_imag,
+                    color=rc_colors[rc_index % len(rc_colors)],
+                    linewidth=1.5, label=str(rc['component'])
+                )
+                offset = float(np.max(z_real_adj))
+
+            self.axes.legend(frameon=False, fontsize=11, loc='best')
+        else:
+            self.axes.text(
+                0.5, 0.06,
+                'Run Peak deconvolution first to create the bounded-frequency CNLS fit.',
+                transform=self.axes.transAxes, ha='center', va='bottom', fontsize=11
+            )
+        self.axes.set_xlabel(r"$Z^{\prime}/(\Omega\,\mathrm{cm}^2)$")
+        self.axes.set_ylabel(r"$-Z^{\prime\prime}/(\Omega\,\mathrm{cm}^2)$")
+        self.axes.axis('equal')
+
 
 
 def launch_gui():
