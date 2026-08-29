@@ -16,6 +16,13 @@ This repository provides an extended and modified version of pyDRTtools in which
   DRT peaks.
 </p>
 
+<p align="center">
+  <img src="tutorial/RCs-Fitting.png" width="600">
+</p>
+<p align="center">
+  DRT peaks.
+</p>
+
 ## Main Features
 
 - Direct import of EIS data exported from different instruments, including BioLogic (.mpr), Zahner (.ism), Gamry (.dta), Scribner/ZView/ZPlot (.z), MATLAB (.mat), and generic text/data files (.txt, .csv, .dat).
