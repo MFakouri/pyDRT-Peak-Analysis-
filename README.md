@@ -39,6 +39,7 @@ This repository provides an extended and modified version of pyDRTtools in which
   - FWHM (Full Width at Half Maximum)
 - Automatic export of the peak parameters to a CSV file.
 - Automatic saving of the resulting figure.
+- CNLS fitting using DRT-derived peak parameters as initial values for the RC elements, with visualization of the measured and fitted Nyquist plots together with the individual RC semicircle contributions.
 - Standalone Windows executable available; no Python or MATLAB installation or additional configuration required.
 
 
