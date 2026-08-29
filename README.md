@@ -20,7 +20,7 @@ This repository provides an extended and modified version of pyDRTtools in which
   <img src="tutorial/RCs-Fitting.png" width="600">
 </p>
 <p align="center">
-  DRT peaks.
+  RCs Fitting.
 </p>
 
 ## Main Features
