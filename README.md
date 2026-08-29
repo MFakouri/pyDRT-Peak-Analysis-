@@ -58,47 +58,11 @@ This repository provides an extended and modified version of pyDRTtools in which
    - runs dependency and numerical smoke tests.
 4. After setup, use `run_windows.bat` whenever you want to launch the GUI.
 
-An internet connection is required for the first source-code installation. MATLAB is not required. The automatic installer is intended for Windows 10/11 x64.
+An internet connection is required for the first source-code installation. The automatic installer is intended for Windows 10/11 x64.
 
-### Manual Python installation
+## Original DRTtools
 
-For manual installation, use **Python 3.11-3.13** (Python 3.13 is recommended):
-
-```bash
-python -m venv .venv
-```
-
-Activate the environment and install the dependencies:
-
-```bash
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -r requirements.txt
-```
-
-Then launch the GUI:
-
-```bash
-python launch.py
-```
-
-The same dependencies are also declared in `setup.py`, so `pip install .` installs the complete runtime dependency set, including BioLogic `.mpr` (`galvani`) and Zahner `.ism` (`zahner-analysis`) support.
-
-## Original pyDRTtools
-
-This software is based on and extends the original **pyDRTtools** Python toolbox developed by the Ciucci Lab.
-
-Original pyDRTtools repository:
-https://github.com/ciuccislab/pyDRTtools
-
-pyDRTtools is distributed under the MIT License.
-
-Users are encouraged to cite the primary DRTtools/pyDRTtools reference:
-
-T. H. Wan, M. Saccoccio, C. Chen, and F. Ciucci,
-“Influence of the discretization methods on the distribution of relaxation times deconvolution: implementing radial basis functions with DRTtools,”
-*Electrochimica Acta*, vol. 184, pp. 483–499, 2015.
-
-https://doi.org/10.1016/j.electacta.2015.09.097
+This software is based on and extends the original **DRTtools** toolbox developed by the [Ciucci Lab](https://github.com/ciuccislab/DRTtools).
 
 ## Contact and Citation
 
@@ -109,7 +73,7 @@ Email: [fakourih@ualberta.ca](mailto:fakourih@ualberta.ca)
 
 If you use this software in your research, please cite this GitHub repository using the **“Cite this repository”** option available on GitHub:
 
-https://github.com/MFakouri/pyDRT-Peak-Analysis-
+https://github.com/MFakouri/DRT-Peak-Analysis-
 
 Please cite the software in any publications or presentations in which it is used.
-Users should also cite the original pyDRTtools/DRTtools publication listed above when appropriate.
+Users should also cite the original DRTtools publication referenced in [Ciucci Lab repository](https://github.com/ciuccislab/DRTtools).
