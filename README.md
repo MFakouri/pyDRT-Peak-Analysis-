@@ -73,7 +73,7 @@ Email: [fakourih@ualberta.ca](mailto:fakourih@ualberta.ca)
 
 If you use this software in your research, please cite this GitHub repository using the **“Cite this repository”** option available on GitHub:
 
-https://github.com/MFakouri/DRT-Peak-Analysis-
+https://github.com/MFakouri/pyDRT-Peak-Analysis-
 
 Please cite the software in any publications or presentations in which it is used.
 Users should also cite the original DRTtools publication referenced in [Ciucci Lab repository](https://github.com/ciuccislab/pyDRTtools).
