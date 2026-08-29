@@ -62,7 +62,7 @@ An internet connection is required for the first source-code installation. The a
 
 ## Original DRTtools
 
-This software is based on and extends the original **DRTtools** toolbox developed by the [Ciucci Lab](https://github.com/ciuccislab/DRTtools).
+This software is based on and extends the original **DRTtools** toolbox developed by the [Ciucci Lab](https://github.com/ciuccislab/pyDRTtools).
 
 ## Contact and Citation
 
@@ -76,4 +76,4 @@ If you use this software in your research, please cite this GitHub repository us
 https://github.com/MFakouri/DRT-Peak-Analysis-
 
 Please cite the software in any publications or presentations in which it is used.
-Users should also cite the original DRTtools publication referenced in [Ciucci Lab repository](https://github.com/ciuccislab/DRTtools).
+Users should also cite the original DRTtools publication referenced in [Ciucci Lab repository](https://github.com/ciuccislab/pyDRTtools).
