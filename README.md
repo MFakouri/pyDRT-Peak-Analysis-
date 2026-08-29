@@ -34,6 +34,47 @@ This repository provides an extended and modified version of pyDRTtools in which
 - Automatic saving of the resulting figure.
 - Standalone Windows executable available; no Python or MATLAB installation or additional configuration required.
 
+
+## Installation
+
+### Windows 10/11 (64-bit) - easiest source-code setup
+
+1. Download the repository ZIP and extract it to a normal folder.
+2. Double-click `run_windows.bat`.
+3. On the first run, the setup script automatically:
+   - downloads the official **CPython 3.13.15 64-bit** installer from `python.org` if Python 3.13 is not already available;
+   - verifies the Python installer SHA-256 checksum before running it;
+   - installs Python for the current Windows user (no system-wide Python installation is required);
+   - creates an isolated `.venv` environment inside the project folder;
+   - installs every package listed in `requirements.txt`; and
+   - runs dependency and numerical smoke tests.
+4. After setup, use `run_windows.bat` whenever you want to launch the GUI.
+
+An internet connection is required for the first source-code installation. MATLAB is not required. The automatic installer is intended for Windows 10/11 x64.
+
+### Manual Python installation
+
+For manual installation, use **Python 3.11-3.13** (Python 3.13 is recommended):
+
+```bash
+python -m venv .venv
+```
+
+Activate the environment and install the dependencies:
+
+```bash
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements.txt
+```
+
+Then launch the GUI:
+
+```bash
+python launch.py
+```
+
+The same dependencies are also declared in `setup.py`, so `pip install .` installs the complete runtime dependency set, including BioLogic `.mpr` (`galvani`) and Zahner `.ism` (`zahner-analysis`) support.
+
 ## Original pyDRTtools
 
 This software is based on and extends the original **pyDRTtools** Python toolbox developed by the Ciucci Lab.

@@ -1,0 +1,50 @@
+CNLS Frequency-Range / Variable-RC Verification
+===============================================
+
+Requested frequency rule implemented for every RC branch
+--------------------------------------------------------
+1. Read f0 directly from the Peak Analysis / Peak Deconvolution table.
+2. Calculate delta directly from frequency using the linear equation through:
+      delta(0.1 Hz) = 0.30
+      delta(5000 Hz) = 0.03
+
+   Therefore:
+      delta(f0) = 0.30000540010800214 - 5.400108002160044e-05*f0
+
+3. b = log10(f0)
+4. Calculate the two requested frequency endpoints:
+      endpoint_1 = 10^(b - 2*delta(f0))
+      endpoint_2 = 10^(b + delta(f0))
+5. Frequency is fitted inside:
+      lower = min(endpoint_1, endpoint_2)
+      upper = max(endpoint_1, endpoint_2)
+
+The min/max operation does not change either requested endpoint. It only keeps
+lower < upper if delta becomes negative at frequencies above the zero crossing.
+No clamping or other modification is applied to delta.
+
+RC fitting behavior
+-------------------
+- Number of RC branches: taken from Number of Peaks.
+- RC ordering: high frequency -> low frequency.
+- Initial R: directly from Peak Analysis table.
+- Initial C: directly from Peak Analysis table.
+- Initial frequency: directly from Peak Analysis table.
+- Frequency: fitted within its calculated interval.
+- R: fitted.
+- C: fitted consistently using C = 1/(2*pi*f*R).
+- Series L: fitted.
+- Series R: fitted.
+- EIS Score: input Nyquist + bounded-frequency CNLS fit and fitted parameter table.
+
+Reference bound checks
+----------------------
+Frequency (Hz)    Delta        Lower (Hz)       Upper (Hz)
+0.1               0.300000     0.0251189        0.199526
+5                 0.299735     1.25747          9.97024
+50                0.297305     12.7163          99.1460
+500               0.273005     142.220          937.508
+5000              0.030000     4354.82          5357.60
+
+Only the frequency-bound formula was changed from the preceding v4 package.
+All other fitting and GUI behavior remains unchanged.
