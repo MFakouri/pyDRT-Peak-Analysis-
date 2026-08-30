@@ -19,7 +19,7 @@ from . import layout
 from . import basics
 from .runs import EIS_object, simple_run, Bayesian_run, BHT_run, peak_analysis
 from .importer import read_eis_file, apply_active_area
-from .export_utils import export_drt_csv, export_eis_csv, export_peak_parameters, export_fitting_parameters, compute_peak_summary
+from .export_utils import export_drt_csv, export_eis_csv, export_parameters_csv, compute_peak_summary
 from .cnls_peak_fit import fit_with_frequency_bounds
 
 
@@ -128,9 +128,9 @@ class GUI(QtWidgets.QMainWindow):
 
         self.peak_table = QtWidgets.QTableWidget(self.ui.frame)
         self.peak_table.setGeometry(QtCore.QRect(0, 750, 901, 191))
-        self.peak_table.setColumnCount(8)
+        self.peak_table.setColumnCount(7)
         self.peak_table.setHorizontalHeaderLabels([
-            "ID", "Series", "Area (Ω·cm²)", "R (Ω·cm²)",
+            "Series", "Area (Ω·cm²)", "R (Ω·cm²)",
             "Tau (s)", "C (F/cm²)", "Frequency (Hz)", "FWHM ln(Tau)"
         ])
         self.peak_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -154,7 +154,7 @@ class GUI(QtWidgets.QMainWindow):
         self.cnls_table.setGeometry(QtCore.QRect(0, 660, 901, 281))
         self.cnls_table.setColumnCount(6)
         self.cnls_table.setHorizontalHeaderLabels([
-            "Component", "Value", "R", "C", "Frequency (Hz)", "Tau (s)"
+            "Component", "Value", "R (Ω·cm²)", "C (F/cm²)", "Frequency (Hz)", "Tau (s)"
         ])
         self.cnls_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.cnls_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -231,8 +231,8 @@ class GUI(QtWidgets.QMainWindow):
             return
 
         rows = [
-            ("L", fit['L'], None, None, None, None),
-            ("R", fit['R'], None, None, None, None),
+            ("L (H·cm²)", fit['L'], None, None, None, None),
+            ("R_ohmic (Ω·cm²)", fit['R'], None, None, None, None),
         ]
         for rc in fit['rc']:
             rows.append((
@@ -265,18 +265,23 @@ class GUI(QtWidgets.QMainWindow):
             return
 
         columns = [
-            'ID', 'Series_Name', 'Area_Ohm_cm2', 'R_Ohm_cm2',
+            'Series_Name', 'Area_Ohm_cm2', 'R_Ohm_cm2',
             'Tau_s', 'Capacitance_F_per_cm2', 'Frequency_Hz', 'FWHM_lnTau'
         ]
+
         self.peak_table.setRowCount(len(df))
+
 
         for row_idx, (_, row) in enumerate(df[columns].iterrows()):
             for col_idx, column in enumerate(columns):
                 value = row[column]
-                if column == 'ID':
-                    text = str(int(value))
-                elif column == 'Series_Name':
-                    text = str(value)
+
+                if column == 'Series_Name':
+                    if str(value) == 'Total Sum':
+                        text = 'Total Sum'
+                    else:
+                        text = f"Peak_{row_idx + 1}"
+
                 elif np.isfinite(value):
                     text = f"{float(value):.6g}"
                 else:
@@ -518,12 +523,12 @@ class GUI(QtWidgets.QMainWindow):
     def export_EIS(self):
         if self.data is None or self.data.method == 'none':
             return
-        folder = self._choose_output_folder("Choose folder for EIS regression")
+        folder = self._choose_output_folder("Choose folder for EIS comparison")
         if folder is None:
             return
         try:
             name = self.data.original_input_name or 'EIS'
-            path = folder/f"{name} EIS regression.csv"
+            path = folder/f"{name} EIS comparison.csv"
             export_eis_csv(self.data, path)
             self.statusBar().showMessage(f"Saved: {path}", 4000)
         except Exception as exc:
@@ -532,24 +537,33 @@ class GUI(QtWidgets.QMainWindow):
     def export_fig(self):
         if self.data is None or self.data.method == 'none':
             return
-        folder = self._choose_output_folder("Choose folder for DRT figure")
+        folder = self._choose_output_folder("Choose folder for figures and parameters")
         if folder is None:
             return
         try:
             name = self.data.original_input_name or 'EIS'
-            path = folder/f"{name} figure.png"
-            # Save the standard Gamma vs Tau representation.
-            fig = Figure_Canvas()
-            fig.DRT_data(self.data, 'Gamma vs Tau')
-            fig.figure.savefig(path, dpi=300, bbox_inches='tight')
-            params = export_peak_parameters(self.data, folder, name)
-            fitting_params = export_fitting_parameters(self.data, folder, name)
-            msg = f"Saved: {path}"
+
+            # Save the standard DRT (Gamma vs Tau) figure.
+            drt_path = folder/f"{name} DRT.png"
+            drt_fig = Figure_Canvas()
+            drt_fig.DRT_data(self.data, 'Gamma vs Tau')
+            drt_fig.figure.savefig(drt_path, dpi=300, bbox_inches='tight')
+
+            # Save the RCs fitting (Nyquist/CNLS) figure.
+            rcs_path = folder/f"{name} RCs fitting.png"
+            rcs_fig = Figure_Canvas()
+            rcs_fig.Score(self.data)
+            rcs_fig.figure.savefig(rcs_path, dpi=300, bbox_inches='tight')
+
+            # Save the combined parameters CSV using the current export layout.
+            params = export_parameters_csv(self.data, folder, name)
+
+            saved_names = [drt_path.name, rcs_path.name]
             if params is not None:
-                msg += f" and {params.name}"
-            if fitting_params is not None:
-                msg += f" and {fitting_params.name}"
-            self.statusBar().showMessage(msg, 5000)
+                saved_names.append(params.name)
+            self.statusBar().showMessage(
+                "Saved: " + ", ".join(saved_names), 5000
+            )
         except Exception as exc:
             self._error("Figure Export Error", exc)
 

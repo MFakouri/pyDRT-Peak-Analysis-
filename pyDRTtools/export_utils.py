@@ -116,53 +116,88 @@ def compute_peak_summary(entry):
     return df
 
 
-def export_peak_parameters(entry, output_folder, original_name):
+def _finite_or_blank(value):
+    """Return a plain Python float for CSV, or an empty string for non-finite values."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return ''
+    return value if np.isfinite(value) else ''
+
+
+def export_parameters_csv(entry, output_folder, original_name):
+    """Export DRT and bounded-CNLS parameters to one CSV file.
+
+    The CSV layout follows the requested combined parameter table: DRT values
+    first, then the fitted RC values. Peak/RC numbering is always assigned
+    from the highest characteristic frequency to the lowest.
+    """
     if getattr(entry, 'method', '') != 'peak':
         return None
-    df = compute_peak_summary(entry)
-    if df.empty:
+
+    drt = compute_peak_summary(entry)
+    if drt.empty:
         return None
-    path = Path(output_folder)/f"{original_name} DRT parameters.csv"
-    export_df = df.rename(columns={'ID': 'Peak_ID'})
-    export_df.to_csv(path, index=False)
-    return path
 
+    peaks = drt[drt['Series_Name'] != 'Total Sum'].copy()
+    peaks = peaks.sort_values(
+        'Frequency_Hz', ascending=False, na_position='last'
+    ).reset_index(drop=True)
 
-def export_fitting_parameters(entry, output_folder, original_name):
+    rows = []
+
+    # DRT section. Column 1 is intentionally left blank under the section title,
+    # matching the requested row/column arrangement.
+    rows.append(['DRT parameters', '', '', '', '', '', '', ''])
+    rows.append([
+        '', 'Component', 'Value', 'Tau (s)', 'Frequency (Hz)',
+        'R (Ohm cm2)', 'Capacitance (F/cm2)', 'FWHM (LnTau)'
+    ])
+    rows.append(['', 'L (H cm2)', _finite_or_blank(getattr(entry, 'L', np.nan)), '', '', '', '', ''])
+    rows.append(['', 'R_ohmic (Ohm cm2)', _finite_or_blank(getattr(entry, 'R', np.nan)), '', '', '', '', ''])
+
+    for i, row in peaks.iterrows():
+        rows.append([
+            '', f'Peak_{i+1}', '',
+            _finite_or_blank(row['Tau_s']),
+            _finite_or_blank(row['Frequency_Hz']),
+            _finite_or_blank(row['R_Ohm_cm2']),
+            _finite_or_blank(row['Capacitance_F_per_cm2']),
+            _finite_or_blank(row['FWHM_lnTau']),
+        ])
+
+    # Three blank rows between DRT and fitting sections.
+    rows.extend([[''] * 8 for _ in range(3)])
+
+    rows.append(['Fitting parameters', '', '', '', '', '', '', ''])
+    rows.append([
+        '', 'Component', 'Value', 'Tau (s)', 'Frequency (Hz)',
+        'R (Ohm cm2)', 'Capacitance (F/cm2)', ''
+    ])
+
     fit = getattr(entry, 'cnls_fit', None)
-    if not fit:
-        return None
+    if fit:
+        rows.append(['', 'L (H cm2)', _finite_or_blank(fit.get('L')), '', '', '', '', ''])
+        rows.append(['', 'R_ohmic (Ohm cm2)', _finite_or_blank(fit.get('R')), '', '', '', '', ''])
 
-    rows = [
-        {
-            'Component': 'L',
-            'Value': fit['L'],
-            'R': np.nan,
-            'C': np.nan,
-            'Frequency (Hz)': np.nan,
-            'Tau (s)': np.nan,
-        },
-        {
-            'Component': 'R',
-            'Value': fit['R'],
-            'R': np.nan,
-            'C': np.nan,
-            'Frequency (Hz)': np.nan,
-            'Tau (s)': np.nan,
-        },
-    ]
-    for rc in fit['rc']:
-        rows.append({
-            'Component': rc['component'],
-            'Value': np.nan,
-            'R': rc['R'],
-            'C': rc['C'],
-            'Frequency (Hz)': rc['frequency'],
-            'Tau (s)': rc['tau'],
-        })
+        rc_rows = sorted(
+            fit.get('rc', []),
+            key=lambda rc: float(rc.get('frequency', -np.inf)),
+            reverse=True,
+        )
+        for i, rc in enumerate(rc_rows):
+            rows.append([
+                '', f'RC{i+1}', '',
+                _finite_or_blank(rc.get('tau')),
+                _finite_or_blank(rc.get('frequency')),
+                _finite_or_blank(rc.get('R')),
+                _finite_or_blank(rc.get('C')),
+                '',
+            ])
 
-    path = Path(output_folder)/f"{original_name} fitting parameters.csv"
-    pd.DataFrame(rows).to_csv(path, index=False)
+    path = Path(output_folder) / f"{original_name} parameters.csv"
+    with path.open('w', newline='', encoding='utf-8') as f:
+        csv.writer(f).writerows(rows)
     return path
 
 
@@ -188,13 +223,6 @@ def export_drt_csv(entry, path, drt_type='Gamma vs Tau'):
 
     with path.open('w', newline='', encoding='utf-8') as f:
         w = csv.writer(f)
-        if entry.method in {'simple','credit','peak'}:
-            w.writerow(['L', getattr(entry,'L',0)])
-            w.writerow(['R', getattr(entry,'R',0)])
-        elif entry.method == 'BHT':
-            w.writerow(['L', entry.mu_L_0])
-            w.writerow(['R', entry.mu_R_inf])
-
         if entry.method == 'simple':
             w.writerow([xname, yname])
             for vals in zip(x, gamma*mult): w.writerow(vals)
@@ -218,9 +246,17 @@ def export_drt_csv(entry, path, drt_type='Gamma vs Tau'):
 
 
 def export_eis_csv(entry, path):
+    """Export EIS regression data using the requested Input/DRT/Fitting layout.
+
+    For the DRT section, the existing regression values (mu_Z_*) are kept.
+    DRT and bounded-CNLS residuals are exported as percentages using the same
+    normalization as the GUI residual plots: residual / |Z_exp| * 100.
+    """
     path = Path(path)
     with path.open('w', newline='', encoding='utf-8') as f:
         w = csv.writer(f)
+
+        # Keep the existing BHT-specific export untouched.
         if entry.method == 'BHT':
             for key in ['s_res_re','s_res_im']:
                 w.writerow([key, *np.asarray(entry.out_scores[key]).reshape(-1).tolist()])
@@ -231,7 +267,88 @@ def export_eis_csv(entry, path):
                             entry.mu_Z_H_im_agm, entry.band_re_agm, entry.band_im_agm,
                             entry.res_H_re, entry.res_H_im):
                 w.writerow(vals)
-        elif entry.method != 'none':
-            w.writerow(['freq','mu_Z_re','mu_Z_im','Z_re_res','Z_im_res'])
-            for vals in zip(entry.freq, entry.mu_Z_re, entry.mu_Z_im, entry.res_re, entry.res_im):
-                w.writerow(vals)
+            return path
+
+        if entry.method == 'none':
+            return None
+
+        freq = np.asarray(entry.freq, dtype=float).reshape(-1)
+        Z_input = np.asarray(entry.Z_exp, dtype=complex).reshape(-1)
+        drt_re = np.asarray(entry.mu_Z_re, dtype=float).reshape(-1)
+        drt_im = np.asarray(entry.mu_Z_im, dtype=float).reshape(-1)
+        drt_res_re = np.asarray(entry.res_re, dtype=float).reshape(-1)
+        drt_res_im = np.asarray(entry.res_im, dtype=float).reshape(-1)
+
+        # Match the Re/Im residual plots in the GUI: residual / |Z_exp| * 100.
+        mod = np.abs(Z_input)
+        drt_res_re = np.divide(
+            drt_res_re, mod,
+            out=np.zeros_like(drt_res_re, dtype=float),
+            where=mod != 0
+        ) * 100
+        drt_res_im = np.divide(
+            drt_res_im, mod,
+            out=np.zeros_like(drt_res_im, dtype=float),
+            where=mod != 0
+        ) * 100
+
+        n = freq.size
+        arrays = [Z_input, drt_re, drt_im, drt_res_re, drt_res_im]
+        if any(np.asarray(a).size != n for a in arrays):
+            raise ValueError("EIS regression arrays have inconsistent lengths.")
+
+        # Requested two-line grouped header. Residual columns are percentages
+        # normalized by |Z_exp|, matching the GUI Re/Im residual plots.
+        w.writerow(['', 'Input', '', 'DRT', '', '', '', 'Fitting', '', '', ''])
+        w.writerow([
+            'freq',
+            'Z_re (Ohm cm2)', 'Z_im (Ohm cm2)',
+            'Z_re (Ohm cm2)', 'Z_im (Ohm cm2)', 'Z_re_res (%)', 'Z_im_res (%)',
+            'Z_re (Ohm cm2)', 'Z_im (Ohm cm2)', 'Z_re_res (%)', 'Z_im_res (%)',
+        ])
+
+        # Fitting columns are populated only when RC/CNLS fitting has already
+        # been completed.  Peak analysis creates entry.cnls_fit automatically.
+        fit = getattr(entry, 'cnls_fit', None)
+        fit_re = fit_im = fit_res_re = fit_res_im = None
+        if fit:
+            fit_freq = np.asarray(fit.get('freq', []), dtype=float).reshape(-1)
+            Z_fit = np.asarray(fit.get('Z_fit', []), dtype=complex).reshape(-1)
+            Z_fit_input = np.asarray(fit.get('Z_exp', []), dtype=complex).reshape(-1)
+
+            if fit_freq.size != n or Z_fit.size != n:
+                raise ValueError("RC fitting and DRT regression frequency arrays have inconsistent lengths.")
+            if not np.allclose(fit_freq, freq, rtol=1e-10, atol=1e-12):
+                raise ValueError("RC fitting frequencies do not match the EIS regression frequencies.")
+            if Z_fit_input.size == n and not np.allclose(Z_fit_input, Z_input, rtol=1e-10, atol=1e-12):
+                raise ValueError("RC fitting input impedance does not match the EIS input impedance.")
+
+            fit_re = np.real(Z_fit)
+            fit_im = np.imag(Z_fit)
+            fit_res_re_raw = fit_re - np.real(Z_input)
+            fit_res_im_raw = fit_im - np.imag(Z_input)
+            fit_res_re = np.divide(
+                fit_res_re_raw, mod,
+                out=np.zeros_like(fit_res_re_raw, dtype=float),
+                where=mod != 0
+            ) * 100
+            fit_res_im = np.divide(
+                fit_res_im_raw, mod,
+                out=np.zeros_like(fit_res_im_raw, dtype=float),
+                where=mod != 0
+            ) * 100
+
+        for i in range(n):
+            row = [
+                freq[i],
+                np.real(Z_input[i]), np.imag(Z_input[i]),
+                drt_re[i], drt_im[i], drt_res_re[i], drt_res_im[i],
+            ]
+            if fit_re is None:
+                row.extend(['', '', '', ''])
+            else:
+                row.extend([fit_re[i], fit_im[i], fit_res_re[i], fit_res_im[i]])
+            w.writerow(row)
+
+    return path
+
