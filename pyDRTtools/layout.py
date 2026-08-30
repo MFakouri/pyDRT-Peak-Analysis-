@@ -529,7 +529,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "pyDRTtools"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "DRT Peak Analysis"))
         self.show_EIS.setText(_translate("MainWindow", "EIS Data"))
         self.show_mag.setText(_translate("MainWindow", "Magnitude"))
         self.show_phase.setText(_translate("MainWindow", "Phase"))
