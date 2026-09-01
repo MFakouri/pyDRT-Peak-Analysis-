@@ -5,11 +5,12 @@ Current behavior:
 - Initial R, C and frequency for every RC branch come directly from the
   peak-deconvolution table, ordered high frequency -> low frequency.
 - Peak frequency is fitted inside a frequency-dependent interval. For each
-  table frequency f0:
+  table frequency f0 and user range scale s (default 1.0):
       delta(f0) = 0.30000540010800214 - 5.400108002160044e-05*f0
+      delta_eff = s*delta(f0)
       b = log10(f0)
-      endpoint_low  = 10**(b - 2*delta(f0))
-      endpoint_high = 10**(b + delta(f0))
+      endpoint_low  = 10**(b - 2*delta_eff)
+      endpoint_high = 10**(b + delta_eff)
   and the optimizer interval is the sorted pair of these two endpoints.
 - R and C are allowed to change. R starts from the table resistance. Frequency
   starts from the table frequency and is fitted inside the interval above.
@@ -32,23 +33,33 @@ _LOWER_DELTA_MULTIPLIER = 2.0
 _LOG_R_SCALE_LIMIT = 50.0
 
 
-def frequency_bounds_from_table_frequency(frequency_hz: float) -> tuple[float, float]:
-    """Return the requested frequency-dependent log-domain interval.
+def frequency_bounds_from_table_frequency(
+    frequency_hz: float,
+    range_scale: float = 1.0,
+) -> tuple[float, float]:
+    """Return the scaled frequency-dependent log-domain interval.
 
-    The user's rule is applied directly to the table frequency f:
+    The base rule is applied directly to the table frequency f, then multiplied
+    by the user-selected range scale s:
         delta(f) = 0.30000540010800214 - 5.400108002160044e-05*f
+        delta_eff = s*delta(f)
         b = log10(f)
-        endpoint_1 = 10**(b - 2*delta(f))
-        endpoint_2 = 10**(b + delta(f))
+        endpoint_1 = 10**(b - 2*delta_eff)
+        endpoint_2 = 10**(b + delta_eff)
 
-    The two endpoints are sorted before being returned so the optimizer always
-    receives a valid lower/upper pair, including when delta becomes negative.
+    A scale of 1.0 reproduces the original bounds exactly. The two endpoints are
+    sorted before being returned so the optimizer always receives a valid
+    lower/upper pair, including when delta becomes negative.
     """
     f0 = float(frequency_hz)
     if not np.isfinite(f0) or f0 <= 0.0:
         raise ValueError("Peak-table frequency must be finite and positive.")
 
-    delta = _DELTA_INTERCEPT + _DELTA_SLOPE * f0
+    range_scale = float(range_scale)
+    if not np.isfinite(range_scale) or range_scale <= 0.0:
+        raise ValueError("Frequency Range Scale must be finite and positive.")
+
+    delta = (_DELTA_INTERCEPT + _DELTA_SLOPE * f0) * range_scale
     b = np.log10(f0)
     endpoint_1 = 10.0 ** (b - _LOWER_DELTA_MULTIPLIER * delta)
     endpoint_2 = 10.0 ** (b + delta)
@@ -158,7 +169,11 @@ def normalized_complex_residual(
     return np.concatenate((np.real(delta) / denom, np.imag(delta) / denom))
 
 
-def rc_parameters_from_peak_deconvolution(entry, expected_n_peaks: int | None = None):
+def rc_parameters_from_peak_deconvolution(
+    entry,
+    expected_n_peaks: int | None = None,
+    frequency_range_scale: float = 1.0,
+):
     """Read initial R/C/f from the peak table and build frequency bounds.
 
     Rows are returned in high-frequency -> low-frequency order. Initial values
@@ -200,7 +215,9 @@ def rc_parameters_from_peak_deconvolution(entry, expected_n_peaks: int | None = 
 
     rows = []
     for i in range(len(peaks)):
-        f_lower, f_upper = frequency_bounds_from_table_frequency(f0[i])
+        f_lower, f_upper = frequency_bounds_from_table_frequency(
+            f0[i], range_scale=frequency_range_scale
+        )
         rows.append({
             "component": f"RC{i+1}",
             "R_initial": float(R0[i]),
@@ -216,7 +233,11 @@ def rc_parameters_from_peak_deconvolution(entry, expected_n_peaks: int | None = 
     return rows
 
 
-def fit_with_frequency_bounds(entry, expected_n_peaks: int | None = None):
+def fit_with_frequency_bounds(
+    entry,
+    expected_n_peaks: int | None = None,
+    frequency_range_scale: float = 1.0,
+):
     """Fit L, series R, and all RC branches with bounded peak frequencies.
 
     Initial R, C and f come from the Peak Analysis table.  During fitting:
@@ -225,7 +246,11 @@ def fit_with_frequency_bounds(entry, expected_n_peaks: int | None = None):
     - each branch C changes consistently according to C=1/(2*pi*f*R),
     - L and series R are free and nonnegative.
     """
-    rc_rows = rc_parameters_from_peak_deconvolution(entry, expected_n_peaks)
+    rc_rows = rc_parameters_from_peak_deconvolution(
+        entry,
+        expected_n_peaks,
+        frequency_range_scale=frequency_range_scale,
+    )
     R0 = np.array([row["R_initial"] for row in rc_rows], dtype=float)
     C0 = np.array([row["C_initial"] for row in rc_rows], dtype=float)
     f0 = np.array([row["frequency_initial"] for row in rc_rows], dtype=float)

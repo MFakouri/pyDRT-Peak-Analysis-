@@ -448,6 +448,7 @@ class GUI(QtWidgets.QMainWindow):
             return
         try:
             n_peaks = max(1, int(round(abs(float(self.ui.peak_num_entry.text())))))
+            frequency_range_scale = float(self.ui.freq_range_scale_entry.value())
             settings = self._settings()
             self.data = peak_analysis(
                 self.data, **settings, peak_method='separate',
@@ -457,8 +458,13 @@ class GUI(QtWidgets.QMainWindow):
             # The requested number of peaks is also the number of RC branches.
             # Initial R/C/f come directly from peak deconvolution in
             # high-frequency -> low-frequency order. Frequency is then allowed
-            # to move only inside the requested log-domain ±5% interval.
-            fit = fit_with_frequency_bounds(self.data, expected_n_peaks=n_peaks)
+            # to move only inside the frequency-dependent bounds scaled by the
+            # user-selected Frequency Range Scale (1.0 preserves the default).
+            fit = fit_with_frequency_bounds(
+                self.data,
+                expected_n_peaks=n_peaks,
+                frequency_range_scale=frequency_range_scale,
+            )
 
             self.plotting_callback('DRT_data')
             self._show_peak_table()

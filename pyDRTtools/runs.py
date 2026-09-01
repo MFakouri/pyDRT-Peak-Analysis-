@@ -17,7 +17,7 @@ import sys
 from numpy import log, log10, sqrt
 import pandas as pd
 from math import pi
-from scipy.optimize import differential_evolution, minimize
+from scipy.optimize import differential_evolution, minimize, least_squares
 from scipy.signal import find_peaks
 import matplotlib.pyplot as plt
 import importlib
@@ -682,60 +682,263 @@ def peak_analysis(entry, rbf_type='Gaussian', data_used='Combined Re-Im Data', i
     if gamma.size != tau_fine.size or gamma.size == 0:
         raise ValueError('DRT result is unavailable for peak analysis.')
 
-    idx0 = int(np.argmax(gamma))
-    peak_value_0 = float(gamma[idx0])
-    log_tau_mu_0 = float(np.log(tau_fine[idx0]))
-    if abs(np.exp(log_tau_mu_0)-1) < np.finfo(float).eps:
-        log_tau_mu_0 = float(np.log(tau_fine[idx0] + np.finfo(float).eps))
+    log_tau = np.log(tau_fine)
+    log_tau_min = float(np.min(log_tau))
+    log_tau_max = float(np.max(log_tau))
 
-    sigma_0 = float(np.mean(np.diff(np.log(1.0/np.asarray(entry.freq, dtype=float)))))
+    # Keep the original width estimate as the initial Gaussian width.
+    sigma_0 = float(np.mean(
+        np.diff(np.log(1.0 / np.asarray(entry.freq, dtype=float)))
+    ))
     if not np.isfinite(sigma_0) or sigma_0 == 0:
         sigma_0 = 1.0
     sigma_0 = abs(sigma_0)
 
-    p_ref = np.array([peak_value_0, log_tau_mu_0, sigma_0], dtype=float)
-    p_init = np.ones_like(p_ref)
-    log_tau_min = float(np.min(np.log(tau_fine)))
-    log_tau_max = float(np.max(np.log(tau_fine)))
-    lb = np.array([0.0, log_tau_min, 0.0], dtype=float)
-    ub = np.array([np.inf, log_tau_max, np.inf], dtype=float)
-    p_fit = p_init.copy()
+    # ------------------------------------------------------------------
+    # Step 1: detect clear local maxima in the DRT and use them as
+    # primary Gaussian seeds. Prominence is used instead of height alone
+    # so a broad shoulder is less likely to outrank a true local maximum.
+    # ------------------------------------------------------------------
+    prominence_floor = max(
+        0.03 * float(np.max(gamma)),
+        np.finfo(float).eps
+    )
 
-    for n in range(1, N_peaks+1):
-        def objective(p):
-            r = _matlab_gauss_fct(tau_fine, p_ref, p) - gamma
-            return float(r @ r)
+    local_idx, local_props = find_peaks(
+        gamma,
+        prominence=prominence_floor
+    )
 
-        bounds = list(zip(lb, ub))
-        result = minimize(
-            objective, p_init, method='SLSQP', bounds=bounds,
-            options={'ftol': 1e-15, 'maxiter': 100000, 'disp': False}
+    if local_idx.size:
+        prominence_order = np.argsort(
+            local_props['prominences']
+        )[::-1]
+
+        seed_indices = [
+            int(i)
+            for i in local_idx[
+                prominence_order[:min(N_peaks, local_idx.size)]
+            ]
+        ]
+    else:
+        seed_indices = [int(np.argmax(gamma))]
+
+    # Make sure the global maximum is represented.
+    global_max_idx = int(np.argmax(gamma))
+    if (
+        global_max_idx not in seed_indices
+        and len(seed_indices) < N_peaks
+    ):
+        seed_indices.insert(0, global_max_idx)
+
+    # Keep track of which seeds are clear DRT maxima and which ones are
+    # introduced later from residual structure. Only residual-added peaks get
+    # an adaptive upper bound on Gaussian width; clear local maxima retain the
+    # original width freedom.
+    primary_seed_indices = set(int(i) for i in seed_indices)
+    residual_seed_indices = set()
+
+    # ------------------------------------------------------------------
+    # Simultaneously fit a set of Gaussian seeds. Each Gaussian center is
+    # constrained to its own local region, with midpoint boundaries between
+    # neighboring initial centers. Residual-added peaks also receive an
+    # adaptive width limit so a broad shoulder cannot absorb a neighboring
+    # physical peak.
+    # ------------------------------------------------------------------
+    def _fit_seed_indices(indices):
+        seeds = np.array(
+            sorted(set(int(i) for i in indices)),
+            dtype=int
         )
-        # MATLAB fmincon normally returns its best iterate even when tolerance
-        # termination is imperfect; preserve that behavior.
-        p_fit = np.asarray(result.x, dtype=float)
 
-        residual = gamma - _matlab_gauss_fct(tau_fine, p_ref, p_fit)
-        idx_temp = int(np.argmax(residual))
-        peak_value_temp = float(gamma[idx_temp])
-        log_tau_mu_temp = float(np.log(tau_fine[idx_temp]))
-        if abs(np.exp(log_tau_mu_temp)-1) < np.finfo(float).eps:
-            log_tau_mu_temp = float(np.log(tau_fine[idx_temp] + np.finfo(float).eps))
-        sigma_temp = sigma_0
+        mu0 = log_tau[seeds]
+        amp0 = np.maximum(
+            gamma[seeds],
+            np.finfo(float).eps
+        )
+        sigma_init = max(float(sigma_0), 0.03)
 
-        p_ref_temp = np.array([peak_value_temp, log_tau_mu_temp, sigma_temp], dtype=float)
-        lb_temp = np.array([0.0, log_tau_min, 0.0], dtype=float)
-        ub_temp = np.array([np.inf, log_tau_max, np.inf], dtype=float)
+        if seeds.size == 1:
+            mu_lower = np.array([log_tau_min])
+            mu_upper = np.array([log_tau_max])
+        else:
+            midpoints = 0.5 * (mu0[:-1] + mu0[1:])
+            mu_lower = np.concatenate([[log_tau_min], midpoints])
+            mu_upper = np.concatenate([midpoints, [log_tau_max]])
 
-        if n != N_peaks:
-            p_ref = np.concatenate([p_ref*p_fit, p_ref_temp])
-            p_init = np.ones_like(p_ref)
-            lb = np.concatenate([lb, lb_temp])
-            ub = np.concatenate([ub, ub_temp])
+        sigma_upper = np.full(seeds.size, 5.0, dtype=float)
+        if seeds.size > 1:
+            for k, seed in enumerate(seeds):
+                if int(seed) not in residual_seed_indices:
+                    continue
+                distances = np.abs(mu0[k] - np.delete(mu0, k))
+                nearest_center_distance = float(np.min(distances))
+                sigma_upper[k] = max(
+                    0.031,
+                    0.40 * nearest_center_distance
+                )
 
-    actual = p_ref * p_fit
-    entry.p_result = actual.reshape((N_peaks, 3)).T
-    entry.gamma_fit_tot = _matlab_gauss_fct(tau_fine, p_ref, p_fit)
+        # Initial widths must lie strictly inside the least-squares bounds.
+        sigma_start = np.minimum(
+            np.full(seeds.size, sigma_init, dtype=float),
+            0.8 * sigma_upper
+        )
+        sigma_start = np.maximum(sigma_start, 0.03)
+
+        p0 = np.column_stack([
+            amp0,
+            mu0,
+            sigma_start
+        ]).reshape(-1)
+
+        lower = []
+        upper = []
+        for lo, hi, sigma_max in zip(mu_lower, mu_upper, sigma_upper):
+            lower.extend([
+                0.0,        # amplitude >= 0
+                float(lo),  # local lower center bound
+                0.03        # minimum Gaussian width
+            ])
+            upper.extend([
+                np.inf,             # amplitude
+                float(hi),          # local upper center bound
+                float(sigma_max)    # adaptive width bound when residual-added
+            ])
+
+        lower = np.asarray(lower, dtype=float)
+        upper = np.asarray(upper, dtype=float)
+
+        def _evaluate(p):
+            fitted = np.zeros_like(gamma)
+            for k in range(seeds.size):
+                amplitude = p[3*k]
+                mu = p[3*k + 1]
+                sigma = p[3*k + 2]
+                fitted += amplitude * np.exp(
+                    -(log_tau - mu)**2 / (2.0 * sigma**2)
+                )
+            return fitted
+
+        result = least_squares(
+            lambda p: _evaluate(p) - gamma,
+            p0,
+            bounds=(lower, upper),
+            max_nfev=100000,
+            ftol=1e-13,
+            xtol=1e-13,
+            gtol=1e-13
+        )
+
+        fitted = _evaluate(result.x)
+        return result.x, fitted
+
+    # ------------------------------------------------------------------
+    # Step 2: if the user requests more peaks than the number of clear
+    # local maxima, add the remaining components from positive residual
+    # structure. Candidates too close to existing fitted centers are skipped.
+    # 0.70 in ln(tau) is approximately a factor of two in characteristic
+    # frequency.
+    # ------------------------------------------------------------------
+    min_center_separation = 0.70
+
+    while len(seed_indices) < N_peaks:
+        p_temp, gamma_temp = _fit_seed_indices(seed_indices)
+        residual = gamma - gamma_temp
+        fitted_centers = p_temp[1::3]
+
+        residual_idx, residual_props = find_peaks(
+            residual,
+            prominence=0.0
+        )
+
+        candidate = None
+
+        if residual_idx.size:
+            # Rank residual peaks by *relative* prominence rather than absolute
+            # prominence. Absolute residuals are naturally larger underneath
+            # large DRT peaks and can therefore pull an extra Gaussian into a
+            # shoulder of an already dominant process. Normalizing by the local
+            # DRT magnitude gives smaller but genuinely unresolved features a
+            # fair chance to be selected. A 2% global-amplitude floor prevents
+            # tiny near-zero tails from receiving an artificially huge score.
+            local_scale = np.maximum(
+                gamma[residual_idx],
+                0.02 * float(np.max(gamma))
+            )
+            relative_prominence = (
+                residual_props['prominences'] / local_scale
+            )
+            residual_order = np.argsort(relative_prominence)[::-1]
+
+            for j in residual_order:
+                idx = int(residual_idx[j])
+
+                # Only positive residuals represent missing DRT contribution.
+                if residual[idx] <= 0:
+                    continue
+
+                center_distance = np.min(
+                    np.abs(log_tau[idx] - fitted_centers)
+                )
+
+                if center_distance >= min_center_separation:
+                    candidate = idx
+                    break
+
+        # Fallback: search all positive-residual points if no residual
+        # local maximum satisfies the separation requirement.
+        if candidate is None:
+            distance_to_existing = np.min(
+                np.abs(
+                    log_tau[:, None]
+                    - fitted_centers[None, :]
+                ),
+                axis=1
+            )
+
+            valid = (
+                (residual > 0)
+                & (distance_to_existing >= min_center_separation)
+            )
+
+            if np.any(valid):
+                masked_residual = np.where(
+                    valid,
+                    residual,
+                    -np.inf
+                )
+                candidate = int(np.argmax(masked_residual))
+            else:
+                # Last-resort fallback: avoid selecting exactly the same
+                # seed index twice.
+                available = np.ones(gamma.size, dtype=bool)
+                available[np.asarray(seed_indices, dtype=int)] = False
+                masked_residual = np.where(
+                    available,
+                    residual,
+                    -np.inf
+                )
+                candidate = int(np.argmax(masked_residual))
+
+        if candidate in seed_indices:
+            break
+
+        seed_indices.append(candidate)
+        residual_seed_indices.add(int(candidate))
+
+    # ------------------------------------------------------------------
+    # Step 3: simultaneous final fit of all requested Gaussian peaks.
+    # ------------------------------------------------------------------
+    p_fit, gamma_fit_tot = _fit_seed_indices(seed_indices)
+
+    # Convert the flat parameter vector to
+    # [amplitude, log(tau center), sigma] and sort from lower tau to higher
+    # tau, which is the same as higher characteristic frequency to lower.
+    p_matrix = p_fit.reshape((-1, 3))
+    p_matrix = p_matrix[np.argsort(p_matrix[:, 1])]
+
+    entry.p_result = p_matrix.T
+    entry.gamma_fit_tot = gamma_fit_tot
 
     gamma_gauss_mat = np.zeros((tau_fine.size, N_peaks), dtype=float)
     for i in range(N_peaks):
