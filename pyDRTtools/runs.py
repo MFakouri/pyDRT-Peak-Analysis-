@@ -766,6 +766,16 @@ def peak_analysis(entry, rbf_type='Gaussian', data_used='Combined Re-Im Data', i
             mu_lower = np.concatenate([[log_tau_min], midpoints])
             mu_upper = np.concatenate([midpoints, [log_tau_max]])
 
+        # Anchor every fitted Gaussian center to its original seed location.
+        # The center may move by at most +/-0.5 decade from the DRT/residual
+        # seed. This prevents a genuine local-maximum seed from migrating far
+        # away during simultaneous fitting and then being rediscovered as a
+        # new residual peak. Midpoint bounds are still respected, so the
+        # effective center interval is the intersection of both constraints.
+        max_center_shift = 0.5 * np.log(10.0)
+        mu_lower = np.maximum(mu_lower, mu0 - max_center_shift)
+        mu_upper = np.minimum(mu_upper, mu0 + max_center_shift)
+
         sigma_upper = np.full(seeds.size, 5.0, dtype=float)
         if seeds.size > 1:
             for k, seed in enumerate(seeds):
