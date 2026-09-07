@@ -23,6 +23,13 @@ This repository provides an extended and modified version of pyDRTtools in which
   RCs Fitting.
 </p>
 
+<p align="center">
+  <img src="tutorial/RCs-Fitting-Constrained-Fit.png" width="600">
+</p>
+<p align="center">
+  A tighter search range constrains the fit around the DRT-derived peak frequencies.
+</p>
+
 ## Main Features
 
 - Direct import of EIS data exported from different instruments, including BioLogic (.mpr), Zahner (.ism), Gamry (.dta), Scribner/ZView/ZPlot (.z), MATLAB (.mat), and generic text/data files (.txt, .csv, .dat).
