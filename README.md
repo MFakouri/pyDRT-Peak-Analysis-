@@ -32,7 +32,7 @@ This repository provides an extended and modified version of pyDRTtools in which
 
 ## Main Features
 
-- Direct import of EIS data exported from different instruments, including BioLogic (.mpr), Zahner (.ism), Gamry (.dta), Scribner/ZView/ZPlot (.z), MATLAB (.mat), and generic text/data files (.txt, .csv, .dat).
+- Direct import of EIS data from multiple potentiostat and analysis platforms, including BioLogic (.mpr), Zahner (.ism, .zmx), Gamry (.dta), PalmSens (.pssession), TDMS-based systems (.tdms), Scribner/ZView/ZPlot (.z), MATLAB (.mat), and generic text/data files (.txt, .csv, .dat).
 - Automatic conversion and standardization of imported EIS files for use in pyDRTtools.
 - Optional active-area correction for impedance data reported in Ω.
 - Direct use of data already normalized in Ω·cm² without additional area correction.
